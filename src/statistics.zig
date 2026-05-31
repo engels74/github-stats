@@ -117,11 +117,13 @@ pub fn init(
     allocator: std.mem.Allocator,
     io: std.Io,
     max_retries: ?usize,
+    owned_repos_only: bool,
 ) !Statistics {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
-    var self: Statistics = try getRepos(allocator, &arena, client);
+    var self: Statistics =
+        try getRepos(allocator, &arena, client, owned_repos_only);
     errdefer self.deinit(allocator);
     try self.getLinesChanged(&arena, io, client, max_retries);
     return self;
@@ -156,6 +158,7 @@ pub fn deinit(self: Statistics, allocator: std.mem.Allocator) void {
 fn getBasicInfo(client: *HttpClient, arena: *std.heap.ArenaAllocator) !struct {
     years: []u32,
     user: []const u8,
+    user_id: []const u8,
     name: ?[]const u8,
     emails: [][]const u8,
 } {
@@ -163,6 +166,7 @@ fn getBasicInfo(client: *HttpClient, arena: *std.heap.ArenaAllocator) !struct {
     const response = try client.graphql(
         \\query {
         \\  viewer {
+        \\    id
         \\    login
         \\    name
         \\    contributionsCollection {
@@ -182,6 +186,7 @@ fn getBasicInfo(client: *HttpClient, arena: *std.heap.ArenaAllocator) !struct {
     const parsed = (try std.json.parseFromSliceLeaky(
         struct { data: struct { viewer: struct {
             login: []const u8,
+            id: []const u8,
             name: ?[]const u8,
             contributionsCollection: struct {
                 contributionYears: []u32,
@@ -226,6 +231,7 @@ fn getBasicInfo(client: *HttpClient, arena: *std.heap.ArenaAllocator) !struct {
     return .{
         .years = parsed.contributionsCollection.contributionYears,
         .user = parsed.login,
+        .user_id = parsed.id,
         .name = parsed.name,
         .emails = emails,
     };
@@ -378,96 +384,233 @@ fn getReposByYear(
         stats.totalPullRequestReviewContributions;
 
     for (stats.commitContributionsByRepository) |x| {
-        const raw_repo = x.repository;
-        if (context.seen.get(raw_repo.nameWithOwner) orelse false) {
-            std.log.debug(
-                "Skipping {s} (seen)",
-                .{raw_repo.nameWithOwner},
-            );
-            continue;
-        }
-        var repository = Repository{
-            .name = try context.allocator.dupe(u8, raw_repo.nameWithOwner),
-            .stars = raw_repo.stargazerCount,
-            .forks = raw_repo.forkCount,
-            .private = raw_repo.isPrivate,
-            .languages = null,
-            .views = 0,
-            .lines_changed = 0,
-        };
-        errdefer repository.deinit(context.allocator);
-        if (raw_repo.languages) |repo_languages| {
-            if (repo_languages.edges) |raw_languages| {
-                repository.languages = try context.allocator.alloc(
-                    Language,
-                    raw_languages.len,
-                );
-                errdefer {
-                    context.allocator.free(repository.languages.?);
-                    repository.languages = null;
-                }
-                for (
-                    raw_languages,
-                    repository.languages.?,
-                    0..,
-                ) |raw, *language, i| {
-                    errdefer {
-                        for (0..i, repository.languages.?) |_, l| {
-                            context.allocator.free(l.name);
-                            if (l.color) |c| context.allocator.free(c);
-                        }
-                    }
-                    language.* = .{
-                        .name = try context.allocator.dupe(u8, raw.node.name),
-                        .size = raw.size,
-                    };
-                    errdefer context.allocator.free(language.name);
-                    if (raw.node.color) |color| {
-                        language.color = try context.allocator.dupe(u8, color);
-                    }
-                    errdefer if (language.color) |c| context.allocator.free(c);
-                }
-            }
-        }
+        try addRepository(context, x.repository);
+    }
+}
 
-        std.log.info(
-            "Getting views for {s}...",
+fn addRepository(context: anytype, raw_repo: anytype) !void {
+    if (context.seen.get(raw_repo.nameWithOwner) orelse false) {
+        std.log.debug(
+            "Skipping {s} (seen)",
             .{raw_repo.nameWithOwner},
         );
-        const response2 = try context.client.rest(
-            try std.mem.concat(
-                context.arena.allocator(),
-                u8,
-                &.{
-                    "https://api.github.com/repos/",
-                    raw_repo.nameWithOwner,
-                    "/traffic/views",
-                },
-            ),
-        );
-        defer context.client.allocator.free(response2.body);
-        if (response2.status == .ok) {
-            repository.views = (try std.json.parseFromSliceLeaky(
-                struct { count: u32 },
-                context.arena.allocator(),
-                response2.body,
-                .{ .ignore_unknown_fields = true },
-            )).count;
-        } else {
-            std.log.info(
-                "Failed to get views for {s} ({?s})",
-                .{ raw_repo.nameWithOwner, response2.status.phrase() },
+        return;
+    }
+    var repository = Repository{
+        .name = try context.allocator.dupe(u8, raw_repo.nameWithOwner),
+        .stars = raw_repo.stargazerCount,
+        .forks = raw_repo.forkCount,
+        .private = raw_repo.isPrivate,
+        .languages = null,
+        .views = 0,
+        .lines_changed = 0,
+    };
+    errdefer repository.deinit(context.allocator);
+    if (raw_repo.languages) |repo_languages| {
+        if (repo_languages.edges) |raw_languages| {
+            repository.languages = try context.allocator.alloc(
+                Language,
+                raw_languages.len,
             );
+            errdefer {
+                context.allocator.free(repository.languages.?);
+                repository.languages = null;
+            }
+            for (
+                raw_languages,
+                repository.languages.?,
+                0..,
+            ) |raw, *language, i| {
+                errdefer {
+                    for (0..i, repository.languages.?) |_, l| {
+                        context.allocator.free(l.name);
+                        if (l.color) |c| context.allocator.free(c);
+                    }
+                }
+                language.* = .{
+                    .name = try context.allocator.dupe(u8, raw.node.name),
+                    .size = raw.size,
+                };
+                errdefer context.allocator.free(language.name);
+                if (raw.node.color) |color| {
+                    language.color = try context.allocator.dupe(u8, color);
+                }
+                errdefer if (language.color) |c| context.allocator.free(c);
+            }
+        }
+    }
+
+    std.log.info(
+        "Getting views for {s}...",
+        .{raw_repo.nameWithOwner},
+    );
+    const response2 = try context.client.rest(
+        try std.mem.concat(
+            context.arena.allocator(),
+            u8,
+            &.{
+                "https://api.github.com/repos/",
+                raw_repo.nameWithOwner,
+                "/traffic/views",
+            },
+        ),
+    );
+    defer context.client.allocator.free(response2.body);
+    if (response2.status == .ok) {
+        repository.views = (try std.json.parseFromSliceLeaky(
+            struct { count: u32 },
+            context.arena.allocator(),
+            response2.body,
+            .{ .ignore_unknown_fields = true },
+        )).count;
+    } else {
+        std.log.info(
+            "Failed to get views for {s} ({?s})",
+            .{ raw_repo.nameWithOwner, response2.status.phrase() },
+        );
+    }
+
+    _ = try repository.getLinesChanged(
+        context.arena,
+        context.client,
+        context.user,
+    );
+
+    try context.seen.put(raw_repo.nameWithOwner, true);
+    try context.repositories.append(context.allocator, repository);
+}
+
+fn getOwnedRepos(context: struct {
+    allocator: std.mem.Allocator,
+    arena: *std.heap.ArenaAllocator,
+    client: *HttpClient,
+    user: []const u8,
+    user_id: []const u8,
+    result: *Statistics,
+    seen: *std.StringHashMap(bool),
+    repositories: *std.ArrayList(Repository),
+}) !void {
+    var after: ?[]const u8 = null;
+    while (true) {
+        std.log.info("Getting owned repository data...", .{});
+        const response = try context.client.graphql(
+            \\query ($after: String, $author: ID) {
+            \\  viewer {
+            \\    repositories(
+            \\        first: 100,
+            \\        after: $after,
+            \\        ownerAffiliations: OWNER,
+            \\        orderBy: { field: UPDATED_AT, direction: DESC }
+            \\    ) {
+            \\      pageInfo {
+            \\        hasNextPage
+            \\        endCursor
+            \\      }
+            \\      nodes {
+            \\        nameWithOwner
+            \\        stargazerCount
+            \\        forkCount
+            \\        isPrivate
+            \\        defaultBranchRef {
+            \\          target {
+            \\            ... on Commit {
+            \\              history(author: { id: $author }) {
+            \\                totalCount
+            \\              }
+            \\            }
+            \\          }
+            \\        }
+            \\        languages(
+            \\            first: 100,
+            \\            orderBy: { direction: DESC, field: SIZE }
+            \\        ) {
+            \\          edges {
+            \\            size
+            \\            node {
+            \\              name
+            \\              color
+            \\            }
+            \\          }
+            \\        }
+            \\      }
+            \\    }
+            \\  }
+            \\}
+        ,
+            .{
+                .after = after,
+                .author = context.user_id,
+            },
+        );
+        defer context.client.allocator.free(response.body);
+        if (response.status != .ok) {
+            std.log.err(
+                "Failed to get owned repository data ({?s})",
+                .{response.status.phrase()},
+            );
+            return error.RequestFailed;
+        }
+        const raw_repositories = (try std.json.parseFromSliceLeaky(
+            struct { data: struct { viewer: struct { repositories: struct {
+                pageInfo: struct {
+                    hasNextPage: bool,
+                    endCursor: ?[]const u8,
+                },
+                nodes: []struct {
+                    nameWithOwner: []const u8,
+                    stargazerCount: u32,
+                    forkCount: u32,
+                    isPrivate: bool,
+                    defaultBranchRef: ?struct {
+                        target: ?struct {
+                            history: ?struct {
+                                totalCount: u32,
+                            } = null,
+                        },
+                    },
+                    languages: ?struct {
+                        edges: ?[]struct {
+                            size: u32,
+                            node: struct {
+                                name: []const u8,
+                                color: ?[]const u8,
+                            },
+                        },
+                    },
+                },
+            } } } },
+            context.arena.allocator(),
+            response.body,
+            .{ .ignore_unknown_fields = true, .allocate = .alloc_always },
+        )).data.viewer.repositories;
+        std.log.info(
+            "Parsed {d} owned repositories",
+            .{raw_repositories.nodes.len},
+        );
+
+        for (raw_repositories.nodes) |raw_repo| {
+            const commits = if (raw_repo.defaultBranchRef) |ref|
+                if (ref.target) |target|
+                    if (target.history) |history| history.totalCount else 0
+                else
+                    0
+            else
+                0;
+            if (commits == 0) {
+                std.log.debug(
+                    "Skipping {s} (no commits by {s} on default branch)",
+                    .{ raw_repo.nameWithOwner, context.user },
+                );
+                continue;
+            }
+            context.result.commit_contributions += commits;
+            try addRepository(context, raw_repo);
         }
 
-        _ = try repository.getLinesChanged(
-            context.arena,
-            context.client,
-            context.user,
-        );
-
-        try context.seen.put(raw_repo.nameWithOwner, true);
-        try context.repositories.append(context.allocator, repository);
+        if (!raw_repositories.pageInfo.hasNextPage) {
+            break;
+        }
+        after = raw_repositories.pageInfo.endCursor orelse break;
     }
 }
 
@@ -475,6 +618,7 @@ fn getRepos(
     allocator: std.mem.Allocator,
     arena: *std.heap.ArenaAllocator,
     client: *HttpClient,
+    owned_repos_only: bool,
 ) !Statistics {
     var result: Statistics = .{
         .user = undefined,
@@ -521,16 +665,29 @@ fn getRepos(
         }
     }
 
-    for (info.years) |year| {
-        try getReposByYear(.{
+    if (owned_repos_only) {
+        try getOwnedRepos(.{
             .allocator = allocator,
             .arena = arena,
             .client = client,
             .user = info.user,
+            .user_id = info.user_id,
             .result = &result,
             .seen = &seen,
             .repositories = &repositories,
-        }, year, 0, 12);
+        });
+    } else {
+        for (info.years) |year| {
+            try getReposByYear(.{
+                .allocator = allocator,
+                .arena = arena,
+                .client = client,
+                .user = info.user,
+                .result = &result,
+                .seen = &seen,
+                .repositories = &repositories,
+            }, year, 0, 12);
+        }
     }
 
     result.repositories = try repositories.toOwnedSlice(allocator);

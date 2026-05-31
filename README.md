@@ -137,6 +137,8 @@ and retrieve the images.
      (separated by commas) to a secret called `EXCLUDE_REPOS`.
      - To prevent your copy of this repository from showing up in your
        statistics, add the name of your copy of the repo to this list.
+   - To only count repositories owned by your account, set `OWNED_REPOS_ONLY` to
+     `true` in the Actions workflow.
    - To exclude some languages from the aggregate statistics, add them
      (separated by commas) to a secret called `EXCLUDE_LANGS`.
      - The languages are case insensitive, and can include spaces.
