@@ -134,25 +134,25 @@ div.ellipsis {
 <span class="progress">
 <span style="
   background-color: #3572A5; 
-  width: 34.324%;
+  width: 34.326%;
 " class="progress-item"></span><span style="
   background-color: #3178c6; 
-  width: 28.207%;
+  width: 28.208%;
 " class="progress-item"></span><span style="
   background-color: #ff3e00; 
   width: 11.333%;
 " class="progress-item"></span><span style="
   background-color: #dea584; 
-  width: 10.619%;
+  width: 10.620%;
 " class="progress-item"></span><span style="
   background-color: #F05138; 
   width: 3.916%;
 " class="progress-item"></span><span style="
   background-color: #00ADD8; 
-  width: 3.849%;
+  width: 3.846%;
 " class="progress-item"></span><span style="
   background-color: #e34c26; 
-  width: 3.336%;
+  width: 3.337%;
 " class="progress-item"></span><span style="
   background-color: #178600; 
   width: 1.773%;
@@ -184,10 +184,10 @@ div.ellipsis {
   background-color: #7e858d; 
   width: 0.008%;
 " class="progress-item"></span><span style="
-  background-color: #427819; 
+  background-color: #7e7eff; 
   width: 0.005%;
 " class="progress-item"></span><span style="
-  background-color: #7e7eff; 
+  background-color: #427819; 
   width: 0.005%;
 " class="progress-item"></span><span style="
   background-color: #012456; 
@@ -212,7 +212,7 @@ div.ellipsis {
       d="M8 4a4 4 0 100 8 4 4 0 000-8z"
   ></path></svg>
   <span class="lang">Python</span>
-  <span class="percent">34.32%</span>
+  <span class="percent">34.33%</span>
 </li>
 <li style="animation-delay: 300ms;">
   <svg 
@@ -474,22 +474,6 @@ div.ellipsis {
   <svg 
       xmlns="http://www.w3.org/2000/svg" 
       class="octicon"
-      style="fill: #427819;" 
-      viewBox="0 0 16 16" 
-      version="1.1" 
-      width="16" 
-      height="16"
-  ><path 
-      fill-rule="evenodd" 
-      d="M8 4a4 4 0 100 8 4 4 0 000-8z"
-  ></path></svg>
-  <span class="lang">Makefile</span>
-  <span class="percent">0.01%</span>
-</li>
-<li style="animation-delay: 2850ms;">
-  <svg 
-      xmlns="http://www.w3.org/2000/svg" 
-      class="octicon"
       style="fill: #7e7eff;" 
       viewBox="0 0 16 16" 
       version="1.1" 
@@ -500,6 +484,22 @@ div.ellipsis {
       d="M8 4a4 4 0 100 8 4 4 0 000-8z"
   ></path></svg>
   <span class="lang">Nix</span>
+  <span class="percent">0.01%</span>
+</li>
+<li style="animation-delay: 2850ms;">
+  <svg 
+      xmlns="http://www.w3.org/2000/svg" 
+      class="octicon"
+      style="fill: #427819;" 
+      viewBox="0 0 16 16" 
+      version="1.1" 
+      width="16" 
+      height="16"
+  ><path 
+      fill-rule="evenodd" 
+      d="M8 4a4 4 0 100 8 4 4 0 000-8z"
+  ></path></svg>
+  <span class="lang">Makefile</span>
   <span class="percent">0.01%</span>
 </li>
 <li style="animation-delay: 3000ms;">
